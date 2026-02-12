@@ -23,12 +23,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Automate Pulse Hub v2 from a config entry."""
     hub = PulseHub(hass, entry)
 
-    if not await hub.async_setup():
-        return False
-
     hass.data[DOMAIN][entry.entry_id] = hub
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    if not await hub.async_setup():
+        return False
 
     return True
 
