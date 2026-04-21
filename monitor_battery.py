@@ -62,13 +62,12 @@ def attach_roller_callbacks(hub: aiopulse2.Hub) -> None:
 
 
 async def run(host: str, retries: int = 5, delay: float = 5.0) -> None:
-    hub = aiopulse2.Hub(host, propagate_callbacks=True)
-    hub.callback_subscribe(hub_update)
-
     attempt = 0
     run_task = None
     while True:
         attempt += 1
+        hub = aiopulse2.Hub(host, propagate_callbacks=True)
+        hub.callback_subscribe(hub_update)
         run_task = asyncio.create_task(hub.run())
         try:
             logger.info("Connecting to %s (attempt %d/%d) ...", host, attempt, retries)
@@ -100,8 +99,6 @@ async def run(host: str, retries: int = 5, delay: float = 5.0) -> None:
             logger.info("Stopping...")
             break
 
-    if hub.running:
-        await hub.stop()
     if run_task is not None and not run_task.done():
         run_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
