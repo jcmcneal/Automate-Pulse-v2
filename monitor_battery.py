@@ -61,26 +61,53 @@ def attach_roller_callbacks(hub: aiopulse2.Hub) -> None:
         logger.debug("subscribed roller callback %s", rid)
 
 
-async def run(host: str) -> None:
+async def run(host: str, retries: int = 5, delay: float = 5.0) -> None:
     hub = aiopulse2.Hub(host, propagate_callbacks=True)
     hub.callback_subscribe(hub_update)
 
-    run_task = asyncio.create_task(hub.run())
-    try:
-        logger.info("Connecting to %s ... (Ctrl+C to stop)", host)
-        await asyncio.wait_for(hub.rollers_known.wait(), timeout=30)
-        attach_roller_callbacks(hub)
-        hub_update(hub)
-        await run_task
-    except asyncio.TimeoutError:
-        logger.error("Timeout waiting for roller names from hub")
-    except KeyboardInterrupt:
-        logger.info("Stopping...")
-    finally:
-        await hub.stop()
-        run_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
+    attempt = 0
+    while True:
+        attempt += 1
+        run_task = asyncio.create_task(hub.run())
+        try:
+            logger.info("Connecting to %s (attempt %d/%d) ...", host, attempt, retries)
+            await asyncio.wait_for(hub.rollers_known.wait(), timeout=30)
+            attach_roller_callbacks(hub)
+            hub_update(hub)
             await run_task
+        except asyncio.TimeoutError:
+            logger.error("Timeout waiting for roller names from hub")
+            if attempt >= retries:
+                break
+        except OSError as e:
+            if e.errno == 65:  # EHOSTUNREACH — transient LAN blip
+                logger.warning(
+                    "[Errno 65] No route to host (attempt %d/%d) — retrying in %.0fs",
+                    attempt,
+                    retries,
+                    delay,
+                )
+                await hub.stop()
+                run_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await run_task
+                await asyncio.sleep(delay)
+                continue
+            raise
+        except KeyboardInterrupt:
+            logger.info("Stopping...")
+            break
+        else:
+            break
+        finally:
+            if not hub.running:
+                break
+    await hub.stop()
+    if run_task.done():
+        return
+    run_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await run_task
 
 
 def main() -> int:
@@ -98,6 +125,22 @@ def main() -> int:
         action="store_true",
         help="INFO on aiopulse2/websockets only",
     )
+    p.add_argument(
+        "-r",
+        "--retries",
+        type=int,
+        default=5,
+        metavar="N",
+        help="Retry N times on EHOSTUNREACH (default: 5, 0 = no retries)",
+    )
+    p.add_argument(
+        "-d",
+        "--delay",
+        type=float,
+        default=5.0,
+        metavar="SECS",
+        help="Seconds between retries on EHOSTUNREACH (default: 5)",
+    )
     args = p.parse_args()
     if not args.host:
         p.error("pass host as argument or set AUTOMATE_PULSE_HOST")
@@ -106,7 +149,7 @@ def main() -> int:
         logging.getLogger("aiopulse2").setLevel(logging.INFO)
         logging.getLogger("websockets").setLevel(logging.INFO)
 
-    asyncio.run(run(args.host))
+    asyncio.run(run(args.host, retries=args.retries, delay=args.delay))
     return 0
 
 
