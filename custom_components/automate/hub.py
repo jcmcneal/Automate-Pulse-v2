@@ -9,7 +9,13 @@ import aiopulse2
 from homeassistant.helpers import device_registry
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
-from .const import AUTOMATE_ENTITY_REMOVE, AUTOMATE_HUB_UPDATE
+from .const import (
+    AUTOMATE_ENTITY_REMOVE,
+    AUTOMATE_HUB_REFRESH,
+    AUTOMATE_HUB_UPDATE,
+    CONF_REFRESH_INTERVAL,
+    DEFAULT_REFRESH_INTERVAL,
+)
 from .helpers import update_devices
 
 _LOGGER = logging.getLogger(__name__)
@@ -27,6 +33,7 @@ class PulseHub:
         self.current_rollers = {}
         self.cleanup_callbacks = []
         self._entered_into_device_registry = False
+        self._refresh_task = None
 
     @property
     def title(self):
@@ -37,6 +44,13 @@ class PulseHub:
     def host(self):
         """Return the host of this hub."""
         return self.config_entry.data["host"]
+
+    @property
+    def refresh_interval(self):
+        """Return the refresh interval in seconds."""
+        return self.config_entry.options.get(
+            CONF_REFRESH_INTERVAL, DEFAULT_REFRESH_INTERVAL
+        )
 
     async def async_setup(self):
         """Set up a hub based on host parameter."""
@@ -49,8 +63,20 @@ class PulseHub:
         hub.callback_subscribe(self.async_notify_update)
         self.tasks.append(asyncio.create_task(hub.run()))
 
+        self._refresh_task = asyncio.create_task(self._periodic_refresh())
+        self.tasks.append(self._refresh_task)
+
         _LOGGER.debug("Hub setup complete")
         return True
+
+    async def _periodic_refresh(self):
+        """Periodically send a refresh signal to all entities."""
+        while True:
+            await asyncio.sleep(self.refresh_interval)
+            _LOGGER.debug("Sending periodic refresh signal")
+            async_dispatcher_send(
+                self.hass, AUTOMATE_HUB_REFRESH.format(self.config_entry.entry_id)
+            )
 
     async def async_reset(self):
         """Reset this hub to default state."""
@@ -65,6 +91,10 @@ class PulseHub:
         await self.api.stop()
         del self.api
         self.api = None
+
+        # Cancel the refresh task and wait for remaining tasks
+        if self._refresh_task:
+            self._refresh_task.cancel()
 
         # Wait for any running tasks to complete
         await asyncio.wait(self.tasks)

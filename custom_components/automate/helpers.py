@@ -24,7 +24,7 @@ def async_add_automate_entities(
     for unique_id, roller in api.items():
         if unique_id not in current:
             _LOGGER.debug("New %s %s", entity_class.__name__, unique_id)
-            new_item = entity_class(roller)
+            new_item = entity_class(roller, config_entry.entry_id)
             current.add(unique_id)
             if new_item.include_entity():
                 new_items.append(new_item)
