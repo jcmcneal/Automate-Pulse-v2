@@ -10,7 +10,7 @@ from homeassistant.core import callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
 from .base import AutomateBase
-from .const import AUTOMATE_HUB_UPDATE, DOMAIN
+from .const import AUTOMATE_HUB_REFRESH, AUTOMATE_HUB_UPDATE, DOMAIN
 from .helpers import async_add_automate_entities
 
 
@@ -77,6 +77,23 @@ class AutomateBattery(AutomateBase, SensorEntity):
     def include_entity(self) -> bool:
         """Return True if roller has a battery."""
         return self.roller.has_battery
+
+    async def async_added_to_hass(self):
+        """Entity has been added to hass."""
+        await super().async_added_to_hass()
+        if self._config_entry_id:
+            self.async_on_remove(
+                async_dispatcher_connect(
+                    self.hass,
+                    AUTOMATE_HUB_REFRESH.format(self._config_entry_id),
+                    self._handle_refresh,
+                )
+            )
+
+    @callback
+    def _handle_refresh(self):
+        """Handle periodic refresh by forcing state update."""
+        self.schedule_update_ha_state()
 
 
 class AutomateSignal(AutomateBase, SensorEntity):

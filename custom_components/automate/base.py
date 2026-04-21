@@ -18,9 +18,10 @@ _LOGGER = logging.getLogger(__name__)
 class AutomateBase(entity.Entity):
     """Base representation of an Automate roller."""
 
-    def __init__(self, roller: aiopulse2.Roller):
+    def __init__(self, roller: aiopulse2.Roller, config_entry_id: str | None = None):
         """Initialize the roller."""
         self.roller = roller
+        self._config_entry_id = config_entry_id
 
     @property
     def title(self):
