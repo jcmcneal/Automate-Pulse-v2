@@ -66,6 +66,7 @@ async def run(host: str, retries: int = 5, delay: float = 5.0) -> None:
     hub.callback_subscribe(hub_update)
 
     attempt = 0
+    run_task = None
     while True:
         attempt += 1
         run_task = asyncio.create_task(hub.run())
@@ -75,6 +76,7 @@ async def run(host: str, retries: int = 5, delay: float = 5.0) -> None:
             attach_roller_callbacks(hub)
             hub_update(hub)
             await run_task
+            break
         except asyncio.TimeoutError:
             logger.error("Timeout waiting for roller names from hub")
             if attempt >= retries:
@@ -97,17 +99,13 @@ async def run(host: str, retries: int = 5, delay: float = 5.0) -> None:
         except KeyboardInterrupt:
             logger.info("Stopping...")
             break
-        else:
-            break
-        finally:
-            if not hub.running:
-                break
-    await hub.stop()
-    if run_task.done():
-        return
-    run_task.cancel()
-    with contextlib.suppress(asyncio.CancelledError):
-        await run_task
+
+    if hub.running:
+        await hub.stop()
+    if run_task is not None and not run_task.done():
+        run_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await run_task
 
 
 def main() -> int:
